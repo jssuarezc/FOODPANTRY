@@ -1,10 +1,12 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from flask_restful import Api, Resource
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///pantry.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
+api = Api(app)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key = True)
@@ -22,6 +24,73 @@ class PantryItem(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable= False)
     owner = db.relationship("User", back_populates="items")
 
+class UserCollection(Resource):
+
+    def get(self):
+        pass
+    def post(self):
+        pass
+
+class UserItem(Resource):
+
+    def get(self, user):
+        pass
+    def put(self, user):
+        pass
+    def delete(self,user):
+        pass
+
+class PantryCollection(Resource):
+
+    def get(self):
+        pass
+    def post(self):
+        pass
+
+class PantryItemItem(Resource):
+
+    def get(self, item):
+        pass
+    def put(self, item):
+        pass
+    def delete(self, item):
+        pass
+
+class ExpiredCollection(Resource):
+
+    def get(self, date):
+        pass
+
+class DateItem(Resource):
+
+    def get(self, date):
+        pass
+
+class RefillCollection(Resource):
+
+    def get(self, date):
+        pass
+
+class UserLogin(Resource):
+
+    def post(self):
+        pass
+    
+class UserLogout(Resource):
+
+    def post(self):
+        pass
+
 @app.route("/hello/<name>")
 def index(name):
     return "Hello {}".format(name), 200
+
+api.add_resource(UserCollection, "/api/users/")
+api.add_resource(UserItem, "/api/users/<user>/")
+api.add_resource(PantryCollection, "/api/items/")
+api.add_resource(PantryItemItem, "/api/items/<item>/")
+api.add_resource(ExpiredCollection, "/api/items/expires/")
+api.add_resource(RefillCollection, "/api/items/refills/")
+api.add_resource(DateItem, "/api/items/expiring/<date>/")
+api.add_resource(UserLogin, "/api/users/login/")
+api.add_resource(UserLogin, "/api/users/logout/")
