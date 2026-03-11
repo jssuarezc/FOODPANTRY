@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Api, Resource
 
@@ -14,6 +14,12 @@ class User(db.Model):
     email = db.Column(db.String(64), nullable = False, unique = True)
     password = db.Column(db.String(256),nullable = False)
     items = db.relationship("PantryItem", back_populates = "owner")
+
+    def serialize(self):
+        return {
+            "username": self.username,
+            "email": self.email,
+        }
     
 class PantryItem(db.Model):
     id = db.Column(db.Integer, primary_key =  True)
@@ -24,10 +30,20 @@ class PantryItem(db.Model):
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable= False)
     owner = db.relationship("User", back_populates="items")
 
+    def serialize(self):
+        return {
+            "name": self.name,
+            "quantity": self.quantity,
+            "unit": self.unit,
+            "exp_date": str(self.exp_date),
+        }
+
 class UserCollection(Resource):
 
     def get(self):
-        pass
+        users = User.query.all()
+        return [u.serialize() for u in users], 200
+    
     def post(self):
         pass
 
@@ -40,10 +56,12 @@ class UserItem(Resource):
     def delete(self,user):
         pass
 
-class PantryCollection(Resource):
+class PantryItemCollection(Resource):
 
     def get(self):
-        pass
+        pantry = PantryItem.query.all()
+        return [p.serialize() for p in pantry], 200
+
     def post(self):
         pass
 
@@ -87,10 +105,10 @@ def index(name):
 
 api.add_resource(UserCollection, "/api/users/")
 api.add_resource(UserItem, "/api/users/<user>/")
-api.add_resource(PantryCollection, "/api/items/")
+api.add_resource(PantryItemCollection, "/api/items/")
 api.add_resource(PantryItemItem, "/api/items/<item>/")
 api.add_resource(ExpiredCollection, "/api/items/expires/")
 api.add_resource(RefillCollection, "/api/items/refills/")
 api.add_resource(DateItem, "/api/items/expiring/<date>/")
 api.add_resource(UserLogin, "/api/users/login/")
-api.add_resource(UserLogin, "/api/users/logout/")
+api.add_resource(UserLogout, "/api/users/logout/")
