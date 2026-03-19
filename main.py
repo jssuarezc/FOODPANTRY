@@ -1,6 +1,8 @@
 from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_restful import Api, Resource
+from sqlalchemy.exc import IntegrityError
+import datetime
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///pantry.db"
@@ -45,7 +47,27 @@ class UserCollection(Resource):
         return [u.serialize() for u in users], 200
     
     def post(self):
-        pass
+        if not request.json:
+            return "Request type must be JSON", 415
+        try:
+            username=request.json["username"]
+            email=request.json["email"]
+            password=request.json["password"]
+
+            new_user = User(
+                username=username,
+                email=email,
+                password=password
+            )
+            db.session.add(new_user)
+            db.session.commit()
+        except KeyError:
+            return "Request not found", 400
+        except (ValueError, TypeError):
+            return "user and email formats are incorrect", 400
+        except IntegrityError:
+            return "User already exists", 409
+        return "User added", 201
 
 class UserItem(Resource):
 
@@ -63,7 +85,30 @@ class PantryItemCollection(Resource):
         return [p.serialize() for p in pantry], 200
 
     def post(self):
-        pass
+        if not request.json:
+            return "request type shoyld be JSON", 415
+        try:
+            name=request.json["name"]
+            quantity=request.json["quantity"]
+            unit=request.json["unit"]
+            exp_date=datetime.date.fromisoformat(request.json["exp_date"])
+            owner_id=request.json["owner_id"]
+            new_pantry = PantryItem(
+                name=name,
+                quantity=quantity,
+                unit=unit,
+                exp_date=exp_date,
+                owner_id=owner_id
+            )
+            db.session.add(new_pantry)
+            db.session.commit()
+        except KeyError:
+            return "Request not found", 400
+        except (ValueError, TypeError):
+            return "pantry item formats are incorrect", 400
+        except IntegrityError:
+            return "Pantry Item already exists", 409
+        return "Product added to pantry", 201
 
 class PantryItemItem(Resource):
 
@@ -76,7 +121,7 @@ class PantryItemItem(Resource):
 
 class ExpiredCollection(Resource):
 
-    def get(self, date):
+    def get(self):
         pass
 
 class DateItem(Resource):
@@ -86,7 +131,7 @@ class DateItem(Resource):
 
 class RefillCollection(Resource):
 
-    def get(self, date):
+    def get(self):
         pass
 
 class UserLogin(Resource):
