@@ -4,6 +4,8 @@ from flask_restful import Api, Resource
 from sqlalchemy.exc import IntegrityError
 import datetime
 
+
+
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///pantry.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -23,6 +25,27 @@ class User(db.Model):
             "email": self.email,
         }
     
+    @staticmethod
+    def json_schema():
+        schema = {
+            "type": "object",
+            "required": ["username", "email", "password"]
+        }
+        props = schema["properties"] = {}
+        props["username"] = {
+            "description": "Name of the user",
+            "type": "string"
+        }
+        props["email"] = {
+            "description": "Email of a user",
+            "type": "string"
+        }
+        props["password"] = {
+            "description": "User's password",
+            "type": "string"
+        }
+        return schema
+    
 class PantryItem(db.Model):
     id = db.Column(db.Integer, primary_key =  True)
     name = db.Column(db.String(64), nullable = False)
@@ -40,8 +63,32 @@ class PantryItem(db.Model):
             "exp_date": str(self.exp_date),
         }
 
-class UserCollection(Resource):
+    @staticmethod
+    def json_schema():
+        schema = {
+            "type": "object",
+            "required": ["name", "quantity", "unit", "exp_date"]
+        }
+        props = schema["properties"] = {}
+        props["name"] = {
+            "description": "Item name",
+            "type": "string"
+        }
+        props["quantity"] = {
+            "description": "Quantity to use",
+            "type": "number"
+        }
+        props["unit"] = {
+            "description": "Unit: ml, onz, pieces",
+            "type": "string"
+        }
+        props["exp_date"] = {
+            "description": "Expiration date",
+            "type": "string"
+        }
+        return schema
 
+class UserCollection(Resource):
     def get(self):
         users = User.query.all()
         return [u.serialize() for u in users], 200
@@ -70,13 +117,35 @@ class UserCollection(Resource):
         return "User added", 201
 
 class UserItem(Resource):
-
     def get(self, user):
-        pass
+        user_obj = User.query.filter_by(username=user).first()
+        if user_obj is None:
+            return "User not found", 404
+        
+        return user_obj.serialize(), 200
+    
     def put(self, user):
-        pass
+        user_obj = User.query.filter_by(username=user).first()
+        if user_obj is None:
+            return "User not found", 404
+        if not request.json:
+            return "User is not a JSON object", 415
+        user_obj.username = request.json["username"]
+        user_obj.email = request.json["email"]
+        user_obj.password = request.json["password"]
+        try:
+            db.session.commit()
+        except IntegrityError:
+            return "Username or email already in use", 409
+        return "", 204
+
     def delete(self,user):
-        pass
+        user_obj = User.query.filter_by(username=user).first()
+        if user_obj is None:
+            return "User not found", 404
+        db.session.delete(user_obj)
+        db.session.commit()
+        return "", 204
 
 class PantryItemCollection(Resource):
 
@@ -111,38 +180,61 @@ class PantryItemCollection(Resource):
         return "Product added to pantry", 201
 
 class PantryItemItem(Resource):
-
     def get(self, item):
-        pass
+        item_obj = PantryItem.query.filter_by(name=item).first()
+        if item_obj is None:
+            return "Item not found", 404
+        return item_obj.serialize(), 200
+    
     def put(self, item):
-        pass
-    def delete(self, item):
-        pass
+        item_obj = PantryItem.query.filter_by(name=item).first()
+        if item_obj is None:
+            return "Item not found", 404
+        if not request.json:
+            return "Item is not a JSON object", 415
+        item_obj.name = request.json["name"]
+        item_obj.quantity = request.json["quantity"]
+        item_obj.unit = request.json["unit"]
+        item_obj.exp_date = datetime.date.fromisoformat(request.json["exp_date"])
+
+        try:
+            db.session.commit()
+        except IntegrityError:
+            return "Item already registered", 409
+        return "", 204
+
+    def delete(self,item):
+        item_obj = PantryItem.query.filter_by(name=item).first()
+        if item_obj is None:
+            return "Item not found", 404
+        db.session.delete(item_obj)
+        db.session.commit()
+        return "", 204
 
 class ExpiredCollection(Resource):
 
     def get(self):
-        pass
+        pass #TO DO: Implement this later!!!
 
 class DateItem(Resource):
 
     def get(self, date):
-        pass
+        pass #TO DO: Implement this later!!!
 
 class RefillCollection(Resource):
 
     def get(self):
-        pass
+        pass #TO DO: Implement this later!!!
 
 class UserLogin(Resource):
 
     def post(self):
-        pass
+        pass #TO DO: Implement this later!!!
     
 class UserLogout(Resource):
 
     def post(self):
-        pass
+        pass #TO DO: Implement this later!!!
 
 @app.route("/hello/<name>")
 def index(name):
