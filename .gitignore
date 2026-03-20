@@ -5,3 +5,5 @@ Scripts/
 Lib/
 __pycache__/
 Include/
+instance/
+.env
