@@ -214,17 +214,24 @@ class PantryItemItem(Resource):
 class ExpiredCollection(Resource):
 
     def get(self):
-        pass #TO DO: Implement this later!!!
+        today = datetime.date.today()
+
+        results = PantryItem.query.filter(PantryItem.exp_date < today)
+        return [p.serialize() for p in results], 200
 
 class DateItem(Resource):
 
     def get(self, date):
-        pass #TO DO: Implement this later!!!
+        item_date = datetime.date.fromisoformat(date)
+
+        results = PantryItem.query.filter(PantryItem.exp_date == item_date)
+        return [p.serialize() for p in results], 200
 
 class RefillCollection(Resource):
 
     def get(self):
-        pass #TO DO: Implement this later!!!
+        results = PantryItem.query.filter(PantryItem.quantity <= 0)
+        return [p.serialize() for p in results], 200
 
 class UserLogin(Resource):
 
