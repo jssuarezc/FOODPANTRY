@@ -1,10 +1,11 @@
 import datetime
 import os
-
+import random
+import string
 from dotenv import load_dotenv
 from flask import Flask, request
 from flask_jwt_extended import (JWTManager, create_access_token, get_jwt,
-                                jwt_required)
+                                get_jwt_identity, jwt_required)
 from flask_restful import Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
@@ -45,6 +46,8 @@ def check_if_token_revoked(_, jwt_payload):
 def revoked_token_response(_, __):
     return {"message": "Token has been revoked"}, 401
 
+def generate_join_code(length=6):
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -52,8 +55,9 @@ class User(db.Model):
     email = db.Column(db.String(64), nullable=False, unique=True)
     password = db.Column(db.String(256), nullable=False)
     items = db.relationship(
-        "PantryItem", back_populates="owner", cascade="all, delete-orphan"
+        "PantryItem", back_populates="item_added", foreign_keys="PantryItem.added_by",cascade="all, delete-orphan"
     )
+    households = db.relationship("HouseholdMember", back_populates="user", cascade="all, delete-orphan")
 
     def serialize(self):
         return {
@@ -76,6 +80,20 @@ class User(db.Model):
         props["password"] = {"description": "User's password", "type": "string"}
         return schema
 
+class Household(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    join_code = db.Column(db.String(8), unique=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    members = db.relationship("HouseholdMember", back_populates="household", cascade="all, delete-orphan")
+
+class HouseholdMember(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    household_id = db.Column(db.Integer, db.ForeignKey("household.id"),nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    role = db.Column(db.String(10),nullable=False, default="member")
+    household = db.relationship("Household", back_populates="members")
+    user = db.relationship("User", back_populates="households")
 
 class PantryItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -85,8 +103,10 @@ class PantryItem(db.Model):
     exp_date = db.Column(db.Date, nullable=False)
     location = db.Column(db.String(64), nullable=False)
     brand = db.Column(db.String(80), nullable = True)
-    owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    owner = db.relationship("User", back_populates="items")
+    added_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    household_id = db.Column(db.Integer, db.ForeignKey("household.id"), nullable=False)
+    item_added = db.relationship("User", back_populates="items", foreign_keys=[added_by])
+    household = db.relationship("Household")
 
     def serialize(self):
         return {
@@ -197,7 +217,7 @@ class PantryItemCollection(Resource):
             exp_date = datetime.date.fromisoformat(request.json["exp_date"])
             owner_id = request.json["owner_id"]
             location = request.json["location"]
-            brand = request.json["brand"]
+            brand = request.json.get("brand")
             new_pantry = PantryItem(
                 name=name,
                 quantity=quantity,
@@ -239,7 +259,7 @@ class PantryItemItem(Resource):
         item_obj.unit = request.json["unit"]
         item_obj.exp_date = datetime.date.fromisoformat(request.json["exp_date"])
         item_obj.location = request.json["location"]
-        item_obj.brand = request.json["brand"]
+        item_obj.brand = request.json.get("brand")
 
         try:
             db.session.commit()
