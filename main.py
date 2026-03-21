@@ -25,6 +25,7 @@ api = Api(
 )
 
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=24)
 jwt = JWTManager(app)
 
 BLOCKLIST = set()
@@ -82,6 +83,8 @@ class PantryItem(db.Model):
     quantity = db.Column(db.Float, nullable=False)
     unit = db.Column(db.String(20), nullable=False)
     exp_date = db.Column(db.Date, nullable=False)
+    location = db.Column(db.String(64), nullable=False)
+    brand = db.Column(db.String(80), nullable = True)
     owner_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     owner = db.relationship("User", back_populates="items")
 
@@ -91,19 +94,22 @@ class PantryItem(db.Model):
             "quantity": self.quantity,
             "unit": self.unit,
             "exp_date": str(self.exp_date),
+            "location": self.location,
+            "brand": self.brand
         }
 
     @staticmethod
     def json_schema():
         schema = {
             "type": "object",
-            "required": ["name", "quantity", "unit", "exp_date"],
+            "required": ["name", "quantity", "unit", "exp_date", "location"],
         }
         props = schema["properties"] = {}
         props["name"] = {"description": "Item name", "type": "string"}
         props["quantity"] = {"description": "Quantity to use", "type": "number"}
         props["unit"] = {"description": "Unit: ml, onz, pieces", "type": "string"}
         props["exp_date"] = {"description": "Expiration date", "type": "string"}
+        props["location"] = {"description": "fridge, freezer", "type": "string"}
         return schema
 
 
@@ -190,12 +196,16 @@ class PantryItemCollection(Resource):
             unit = request.json["unit"]
             exp_date = datetime.date.fromisoformat(request.json["exp_date"])
             owner_id = request.json["owner_id"]
+            location = request.json["location"]
+            brand = request.json["brand"]
             new_pantry = PantryItem(
                 name=name,
                 quantity=quantity,
                 unit=unit,
                 exp_date=exp_date,
                 owner_id=owner_id,
+                location = location,
+                brand = brand
             )
             db.session.add(new_pantry)
             db.session.commit()
@@ -228,6 +238,8 @@ class PantryItemItem(Resource):
         item_obj.quantity = request.json["quantity"]
         item_obj.unit = request.json["unit"]
         item_obj.exp_date = datetime.date.fromisoformat(request.json["exp_date"])
+        item_obj.location = request.json["location"]
+        item_obj.brand = request.json["brand"]
 
         try:
             db.session.commit()
@@ -303,7 +315,7 @@ class UserLogout(Resource):
 
 @app.route("/hello/<name>")
 def index(name):
-    return "Hello {}".format(name), 200
+    return f"Hello {name}", 200
 
 
 api.add_resource(UserCollection, "/api/users/")
