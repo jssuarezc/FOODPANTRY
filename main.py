@@ -79,7 +79,7 @@ class User(db.Model):
         props["email"] = {"description": "Email of a user", "type": "string"}
         props["password"] = {"description": "User's password", "type": "string"}
         return schema
-
+    
 class Household(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), nullable=False)
@@ -132,6 +132,15 @@ class PantryItem(db.Model):
         props["location"] = {"description": "fridge, freezer", "type": "string"}
         return schema
 
+def get_membership(username, household_id):
+    user_obj = User.query.filter_by(username=username).first()
+    if user_obj is None:
+        return None, None
+    member_assign = HouseholdMember.query.filter_by(
+        household_id=household_id,
+        user_id=user_obj.id
+    ).first()
+    return user_obj, member_assign
 
 class UserCollection(Resource):
 
@@ -198,6 +207,108 @@ class UserItem(Resource):
         db.session.commit()
         return "", 204
 
+class HouseholdCollection(Resource):
+
+    @jwt_required()
+    def get(self):
+        # hint: only return households the current user belongs to
+        # hint: get_jwt_identity() gives you the current username
+        # hint: query HouseholdMember by user_id first
+        pass  #TO DO: Implement this method
+
+    @jwt_required()
+    def post(self):
+        if not request.json:
+            return "request type should be JSON", 415
+        if "name" not in request.json:
+            return "Name field missing", 400
+        try:
+            current_user = get_jwt_identity()
+            user_find = User.query.filter_by(username=current_user).first()
+
+            join_code = generate_join_code()
+
+            new_household = Household(
+                name=request.json["name"],
+                join_code=join_code,
+                created_by=user_find.id
+            )
+
+            db.session.add(new_household)
+            db.session.flush()
+
+            new_member = HouseholdMember(
+                household_id=new_household.id,
+                user_id=user_find.id,
+                role="owner"
+            )
+            db.session.add(new_member)
+            db.session.commit()
+        except KeyError:
+            return "Missing fields", 400
+        except IntegrityError:
+            return "Household already assigned", 409
+        return "Household added", 201
+
+class HouseholdItem(Resource):
+
+    @jwt_required()
+    def get(self, household):
+        # hint: check user is a member before returning
+        pass  #TO DO: Implement this method
+
+    @jwt_required()
+    def put(self, household):
+        # hint: only owner role can rename household
+        pass  #TO DO: Implement this method
+
+    @jwt_required()
+    def delete(self, household):
+        # hint: only owner role can delete household
+        pass  #TO DO: Implement this method
+
+class MemberCollection(Resource):
+
+    @jwt_required()
+    def get(self, household):
+        # hint: return list of members with their usernames and roles
+        # hint: must be a member yourself to see this
+        pass  #TO DO: Implement this method
+
+class JoinHousehold(Resource):
+
+    @jwt_required()
+    def post(self):
+        if not request.json:
+            return "request type should be JSON", 415
+        if "join_code" not in request.json:
+            return "Code not found", 400
+        try:
+            join_code = request.json["join_code"]
+            current_user=get_jwt_identity()
+            user_find = User.query.filter_by(username=current_user).first()
+            find_house = Household.query.filter_by(join_code=join_code)
+            if find_house is None:
+                return "Household not found", 404
+
+            existing_member = HouseholdMember.query.filter_by(
+                household_id=find_house.id,
+                user_id=user_find.id
+            ).first()
+            if existing_member:
+                return "Already a member in this house", 409
+
+            new_h_member = HouseholdMember(
+                household_id = find_house.id,
+                user_id=user_find.id,
+                role = "member"
+            )
+            db.session.add(new_h_member)
+            db.commit()
+        except KeyError:
+            return "Bad request", 400
+
+        return "Used added to household", 201
 
 class PantryItemCollection(Resource):
 
@@ -340,10 +451,14 @@ def index(name):
 
 api.add_resource(UserCollection, "/api/users/")
 api.add_resource(UserItem, "/api/users/<user>/")
-api.add_resource(PantryItemCollection, "/api/items/")
-api.add_resource(PantryItemItem, "/api/items/<item>/")
-api.add_resource(ExpiredCollection, "/api/items/expires/")
-api.add_resource(RefillCollection, "/api/items/refills/")
-api.add_resource(DateItem, "/api/items/expiring/<date>/")
+api.add_resource(HouseholdCollection, "/api/households/")
+api.add_resource(HouseholdItem, "/api/households/<household>/")
+api.add_resource(MemberCollection, "/api/households/<household>/members/")
+api.add_resource(JoinHousehold, "/api/join/")
+api.add_resource(PantryItemCollection, "/api/households/<household>/items/")
+api.add_resource(PantryItemItem, "/api/households/<household>/items/<item>/")
+api.add_resource(ExpiredCollection, "/api/households/<household>/items/expires/")
+api.add_resource(RefillCollection, "/api/households/<household>/items/refills/")
+api.add_resource(DateItem, "/api/households/<household>/items/expiring/<date>/")
 api.add_resource(UserLogin, "/api/users/login/")
 api.add_resource(UserLogout, "/api/users/logout/")
