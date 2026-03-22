@@ -1,3 +1,4 @@
+from flasgger import Swagger
 import datetime
 import os
 import random
@@ -29,6 +30,23 @@ api = Api(
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=24)
 jwt = JWTManager(app)
+app.config["SWAGGER"] = {
+    "title": "Fridgeventory",
+    "openapi": "3.0.3",
+    "uiversion": 3,
+    "securityDefinitions": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "JWT token. Format: Bearer <token>"
+        }
+    },
+    "security": [
+        {"Bearer": []}
+    ]
+}
+swagger = Swagger(app, template_file="foodpantry.yaml")
 
 BLOCKLIST = set()
 
@@ -272,7 +290,12 @@ class HouseholdCollection(Resource):
             return "Missing fields", 400
         except IntegrityError:
             return "Household already assigned", 409
-        return "Household added", 201
+        return {
+            "message": "Household created",
+            "name": new_household.name,
+            "join_code": join_code,
+            "id": new_household.id
+        }, 201
 
 class HouseholdItem(Resource):
 

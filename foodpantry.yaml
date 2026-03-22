@@ -1,0 +1,777 @@
+---
+info:
+  title: Fridgeventory
+  version: 1.0.0
+  description: |
+    This in an app of registering pantry products.
+    It stores what is remaining in the refrigerator.
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        username:
+          description: Username to access the application
+          type: string
+        email:
+          description: User email
+          type: string
+        password:
+          description: User password
+          type: string
+      required:
+      - username
+      - email
+      - password
+    Pantryitem:
+      type: object
+      properties:
+        name:
+          description: product name
+          type: string
+        quantity:
+          description: quantity of product
+          type: number
+        min_quantity:
+          description: minimum quantity before refill
+          type: number
+        unit:
+          description: unit of product
+          type: string
+        exp_date:
+          description: Expiration date
+          type: string
+        location:
+          description: where the item is located (fridge, freezer, shelf)
+          type: string
+        brand:
+          description: product brand
+          type: string
+      required:
+      - name
+      - quantity
+      - unit
+      - exp_date
+      - location
+    Household:
+      type: object
+      properties:
+        name:
+          description: House name like "Summer house", "Home"
+          type: string
+      required:
+        - name
+    Category:
+      type: object
+      properties:
+        name:
+          description: Category to categorize items like "snacks", "pasta"
+          type: string
+        household_id:
+          description: id matching the house owner
+          type: string
+      required:
+        - name
+        - household_id
+  securitySchemes:
+    Bearer:
+      type: apiKey
+      name: Authorization
+      in: header
+      description: "JWT token format: Bearer <token>"
+servers:
+  - url: /api
+paths:
+  /users/:
+    post:
+      description: Registers a new user
+      requestBody:
+        description : User registration details
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+            example:
+              username: johnd
+              email: johnd@test.com
+              password: test123
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          description: Missing fields
+        '409':
+          description: Username or email already exists
+        '415':
+          description: Request must be JSON
+  /users/login/:
+    post:
+      description: Login and receive a JWT token
+      requestBody:
+        description : Login credentials
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+            example:
+              username: john doe
+              password: test123
+      responses:
+        '200':
+          description: Successful login, returns a token
+          content:
+            application/json:
+              example:
+                token: rjhUESF9880.....
+        '401':
+          description: Invalid username or password
+        '415':
+          description: Request must be JSON
+  /users/logout/:
+    post:
+      description: Logout and invalidate current Token
+      security:
+        - Bearer: []
+      responses:
+        '200':
+          description: Logged out successfully
+        '401':
+          description: Missing or invalid token
+  /users/{user}/:
+    get:
+      description:  Get a single user's profile
+      security:
+        - Bearer: []
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: string
+            description: Username
+      responses:
+        '200':
+          description: User profile returned
+          content:
+            application/json:
+              example:
+                username: johnd
+                email: johnd@test.com
+        '401':
+          description: Missing or invalid token
+        '404':
+          description: User not found
+    put:
+      description: Update a user's profile
+      security:
+        - Bearer: []
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Username
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+            example:
+              username: jose
+              email: jose_new@test.com
+              password: newpassword
+      responses:
+        '204':
+          description: User updated successfully
+        '404':
+          description: User not found
+        '409':
+          description: Username or email already in use
+        '415':
+          description: Request must be JSON
+    delete:
+      description: Delete a user and all their data
+      security:
+        - Bearer: []
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Username
+      responses:
+        '204':
+          description: User deleted successfully
+        '404':
+          description: User not found
+        '401':
+          description: Missing or invalid token
+  /households/:
+    get:
+      description: Get all households that user currently manages
+      security:
+        - Bearer: []
+      responses:
+        '200':
+          description: List of households returned
+          content:
+            application/json:
+              example:
+                - id: 1
+                  name: Home
+                  role: owner
+        '401':
+          description: Missing or invalid token
+    post:
+      description: Create a new household
+      security:
+        - Bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Household'
+            example:
+              name: Home
+      responses:
+        '201':
+          description: Household created
+          content:
+            application/json:
+              example:
+                name: Home
+                join_code: X7K2P9
+  /households/{household}/:
+    get:
+      description: Get a single household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      responses:
+        '200':
+          description: Household returned
+          content:
+            application/json:
+              example:
+                id: 1
+                name: Home
+                join_code: X7K2P9
+        '403':
+          description: Access denied
+        '404':
+          description: Household not found
+    put:
+      description: Rename a household (owner only)
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Household'
+            example:
+              name: Summer House
+      responses:
+        '204':
+          description: Household renamed
+        '400':
+          description: Name field missing
+        '403':
+          description: Only owner can rename
+        '404':
+          description: Household not found
+    delete:
+      description: Delete a household (owner only)
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      responses:
+        '204':
+          description: Household deleted
+        '403':
+          description: Only owner can delete
+        '404':
+          description: Household not found
+  /households/{household}/members/:
+    get:
+      description: Get all members of a household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      responses:
+        '200':
+          description: Member list returned
+          content:
+            application/json:
+              example:
+                - username: jose
+                  role: owner
+                - username: ana
+                  role: member
+        '403':
+          description: Access denied
+  /join/:
+    post:
+      description: User joins a household with a join code
+      security:
+        - Bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                join_code:
+                  type: string
+            example:
+              join_code: X7K2P9
+      responses:
+        '201':
+          description: Successfully joined
+        '404':
+          description: Household not found
+        '409':
+          description: User is already a member of this household
+  /households/{household}/items/:
+    get:
+      description: Get all pantry items in a household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      responses:
+        '200':
+          description: List of pantry items
+          content:
+            application/json:
+              example:
+                - name: Milk
+                  quantity: 2.0
+                  unit: liters
+                  exp_date: "2026-03-25"
+                  location: fridge
+                  brand: Valio
+                  min_quantity: 0.5
+                  categories: []
+        '403':
+          description: Access denied
+    post:
+      description: Add a new item to the pantry
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pantryitem'
+            example:
+              name: Milk
+              quantity: 2.0
+              unit: liters
+              exp_date: "2026-03-25"
+              location: fridge
+              brand: Valio
+      responses:
+        '201':
+          description: Item added to pantry
+        '400':
+          description: Missing or invalid fields
+        '403':
+          description: Access denied
+        '415':
+          description: Request must be json
+  /households/{household}/items/{item}/:
+    get:
+      description: Get a single pantry item
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Item name
+      responses:
+        '200':
+          description: Item returned
+          content:
+            application/json:
+              example:
+                name: Milk
+                quantity: 2.0
+                unit: liters
+                exp_date: "2026-03-25"
+                location: fridge
+        '403':
+          description: Access denied
+        '404':
+          description: Item not found
+    put:
+      description: Update a pantry item
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pantryitem'
+            example:
+              name: Milk
+              quantity: 1.5
+              unit: liters
+              exp_date: "2026-03-25"
+              location: fridge
+      responses:
+        '204':
+          description: Item updated
+        '403':
+          description: Access denied
+        '404':
+          description: Item not found
+        '415':
+          description: Request must be JSON
+    delete:
+      description: Delete a pantry item
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Item deleted
+        '403':
+          description: Access denied
+        '404':
+          description: Item not found
+  /households/{household}/items/search/:
+    get:
+      description: Search pantry items by name (case insensitive)
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Search term like "milk"
+      responses:
+        '200':
+          description: Matching items returned
+        '400':
+          description: No search term provided
+        '403':
+          description: Access denied
+
+  /households/{household}/items/expires/:
+    get:
+      description: Get all expired items in a household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of expired items
+        '403':
+          description: Access denied
+  /households/{household}/items/refills/:
+    get:
+      description: Get items at or below minimum quantity
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of items needing refill
+        '403':
+          description: Access denied
+
+  /households/{household}/items/expiring/{date}/:
+    get:
+      description: Get items expiring on a specific date
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: date
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Date in YYYY-MM-DD format
+      responses:
+        '200':
+          description: Items expiring on that date
+        '403':
+          description: Access denied
+  /households/{household}/categories/:
+    get:
+      description: Get all categories in a household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      responses:
+        '200':
+          description: List of categories
+          content:
+            application/json:
+              example:
+                - id: 1
+                  name: dairy
+                - id: 2
+                  name: frozen
+        '403':
+          description: Access denied
+    post:
+      description: Create a new category in a household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Household ID
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Category'
+            example:
+              name: dairy
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              example:
+                id: 1
+                name: dairy
+        '400':
+          description: Name required
+        '403':
+          description: Access denied
+        '409':
+          description: Category already exists in this household
+  /households/{household}/categories/{category}/:
+    get:
+      description: Get a single category
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Category ID
+      responses:
+        '200':
+          description: Category returned
+          content:
+            application/json:
+              example:
+                id: 1
+                name: dairy
+        '403':
+          description: Access denied
+        '404':
+          description: Category not found
+    delete:
+      description: Delete a category from a household
+      security:
+        - Bearer: []
+      parameters:
+        - name: household
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: category
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Category ID
+      responses:
+        '204':
+          description: Category deleted
+        '403':
+          description: Access denied
+        '404':
+          description: Category not found
+  /households/{household}/items/{item}/categories/:
+      post:
+        description: Assign a category to a pantry item
+        security:
+          - Bearer: []
+        parameters:
+          - name: household
+            in: path
+            required: true
+            schema:
+              type: integer
+            description: Household ID (integer)
+          - name: item
+            in: path
+            required: true
+            schema:
+              type: string
+            description: Product name e.g. Milk
+        requestBody:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category_id:
+                    type: integer
+                    description: ID of the category to assign
+              example:
+                category_id: 1
+        responses:
+          '201':
+            description: Category assigned to item
+          '403':
+            description: Access denied
+          '404':
+            description: Item or category not found
+          '409':
+            description: Category already assigned to this item
+      delete:
+        description: Remove a category from a pantry item
+        security:
+          - Bearer: []
+        parameters:
+          - name: household
+            in: path
+            required: true
+            schema:
+              type: integer
+            description: Household ID (integer)
+          - name: item
+            in: path
+            required: true
+            schema:
+              type: string
+            description: Product name e.g. Milk
+        requestBody:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  category_id:
+                    type: integer
+                    description: ID of the category to remove
+              example:
+                category_id: 1
+        responses:
+          '204':
+            description: Category removed from item
+          '403':
+            description: Access denied
+          '404':
+            description: Item or category not found
