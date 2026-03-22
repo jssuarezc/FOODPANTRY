@@ -23,7 +23,6 @@ Open-source app that allows you to keep track of your pantry item. Check it out!
 This app uses JWT token, which has a limit on token storage that triggers a blocklist function to revoke access
 
 ## TO DO NEXT
-1. Redefine routes for household resources
-2. Finish the Open API doc once routes and db are modified
-3. Work on the frontend (Jinja + Tailwind)
-4. Docker deployment for personal use
+1. Finish the Open API doc once routes and db are modified
+2. Work on the frontend (Jinja + Tailwind)
+3. Docker deployment for personal use
