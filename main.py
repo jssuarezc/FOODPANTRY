@@ -97,7 +97,7 @@ class HouseholdMember(db.Model):
     user = db.relationship("User", back_populates="households")
 
 class Category(db.Model):
-    __table_args__= (db.UniqueConstraint("name", "household_id"))
+    __table_args__= (db.UniqueConstraint("name", "household_id"),)
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), nullable=False)
     household_id = db.Column(db.Integer, db.ForeignKey("household.id"), nullable=False)
@@ -500,15 +500,53 @@ class PantryItemCategoryCollection(Resource):
         if membership is None:
             return "Access Denied", 403
         
-
+        item_obj = PantryItem.query.filter_by(name=item, household_id=household).first()
+        if item_obj is None:
+            return "Item not found", 404
+        
+        if not request.json or "category_id" not in request.json:
+            return "category_id required", 400
+        
+        category = Category.query.filter_by(
+            id=request.json["category_id"],
+            household_id=household
+        ).first()
+        if category is None:
+            return "Category not found", 404
+        
+        if category in item_obj.categories:
+            return "Category already assigned for this item", 409
+        
+        item_obj.categories.append(category)
+        db.session.commit()
+        return {"message": "Category assigned"}, 201
 
     @jwt_required()
     def delete(self, household, item):
         _, membership = get_membership(get_jwt_identity(), household)
         if membership is None:
             return "Access Denied", 403
+
+        item_obj = PantryItem.query.filter_by(name=item, household_id=household).first()
+        if item_obj is None:
+            return "Item not found", 404
         
+        if not request.json or "category_id" not in request.json:
+            return "category_id required", 400
         
+        category = Category.query.filter_by(
+            id=request.json["category_id"],
+            household_id=household
+        ).first()
+        if category is None:
+            return "Category not found", 404
+        
+        if category not in item_obj.categories:
+            return "Category not assigned for this item", 409
+        
+        item_obj.categories.remove(category)
+        db.session.commit()
+        return "", 204
 
 class ExpiredCollection(Resource):
 
@@ -613,7 +651,7 @@ class CategoryItem(Resource):
             return "Category not found", 404
         
         db.session.delete(category)
-        db.commit()
+        db.session.commit()
         return "", 204
 
 class UserLogin(Resource):
