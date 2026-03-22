@@ -3,6 +3,7 @@ import os
 import random
 import string
 from dotenv import load_dotenv
+from sqlalchemy import or_
 from flask import Flask, request
 from flask_jwt_extended import (JWTManager, create_access_token, get_jwt,
                                 get_jwt_identity, jwt_required)
@@ -95,10 +96,24 @@ class HouseholdMember(db.Model):
     household = db.relationship("Household", back_populates="members")
     user = db.relationship("User", back_populates="households")
 
+class Category(db.Model):
+    __table_args__= (db.UniqueConstraint("name", "household_id"))
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    household_id = db.Column(db.Integer, db.ForeignKey("household.id"), nullable=False)
+    household = db.relationship("Household")    
+
+pantry_item_category = db.Table(
+    "pantry_item_category",
+    db.Column("item_id", db.Integer, db.ForeignKey("pantry_item.id"), primary_key=True),
+    db.Column("category_id", db.Integer, db.ForeignKey("category.id"), primary_key=True)
+)
+
 class PantryItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), nullable=False)
     quantity = db.Column(db.Float, nullable=False)
+    min_quantity = db.Column(db.Float, nullable=True)
     unit = db.Column(db.String(20), nullable=False)
     exp_date = db.Column(db.Date, nullable=False)
     location = db.Column(db.String(64), nullable=False)
@@ -107,15 +122,18 @@ class PantryItem(db.Model):
     household_id = db.Column(db.Integer, db.ForeignKey("household.id"), nullable=False)
     item_added = db.relationship("User", back_populates="items", foreign_keys=[added_by])
     household = db.relationship("Household")
+    categories = db.relationship("Category", secondary=pantry_item_category)
 
     def serialize(self):
         return {
             "name": self.name,
             "quantity": self.quantity,
             "unit": self.unit,
+            "min_quantity": self.min_quantity,
             "exp_date": str(self.exp_date),
             "location": self.location,
-            "brand": self.brand
+            "brand": self.brand,
+            "categories": [c.name for c in self.categories]
         }
 
     @staticmethod
@@ -127,6 +145,7 @@ class PantryItem(db.Model):
         props = schema["properties"] = {}
         props["name"] = {"description": "Item name", "type": "string"}
         props["quantity"] = {"description": "Quantity to use", "type": "number"}
+        props["min_quantity"] = {"description": "Minimum quantity before refill needed", "type": "number"}
         props["unit"] = {"description": "Unit: ml, onz, pieces", "type": "string"}
         props["exp_date"] = {"description": "Expiration date", "type": "string"}
         props["location"] = {"description": "fridge, freezer", "type": "string"}
@@ -377,6 +396,7 @@ class PantryItemCollection(Resource):
             user_find = User.query.filter_by(username=current_user).first()
             name = request.json["name"]
             quantity = request.json["quantity"]
+            min_quantity = request.json.get("min_quantity")
             unit = request.json["unit"]
             exp_date = datetime.date.fromisoformat(request.json["exp_date"])
             location = request.json["location"]
@@ -384,6 +404,7 @@ class PantryItemCollection(Resource):
             new_pantry = PantryItem(
                 name=name,
                 quantity=quantity,
+                min_quantity=min_quantity,
                 unit=unit,
                 exp_date=exp_date,
                 added_by=user_find.id,
@@ -428,6 +449,7 @@ class PantryItemItem(Resource):
             return "Item is not a JSON object", 415
         item_obj.name = request.json["name"]
         item_obj.quantity = request.json["quantity"]
+        item_obj.min_quantity = request.json.get("min_quantity")
         item_obj.unit = request.json["unit"]
         item_obj.exp_date = datetime.date.fromisoformat(request.json["exp_date"])
         item_obj.location = request.json["location"]
@@ -452,6 +474,41 @@ class PantryItemItem(Resource):
         db.session.commit()
         return "", 204
 
+class PantryItemSearch(Resource):
+
+    @jwt_required()
+    def get(self, household):
+        _, membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+
+        search = request.args.get("q")
+        if search is None:
+            return "No term provided for search", 400
+
+        results = PantryItem.query.filter(
+            PantryItem.household_id == household,
+            PantryItem.name.ilike(f"%{search}%")
+        )
+        return [p.serialize() for p in results], 200
+    
+class PantryItemCategoryCollection(Resource):
+
+    @jwt_required()
+    def post(self, household, item):
+        _, membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+        
+
+
+    @jwt_required()
+    def delete(self, household, item):
+        _, membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+        
+        
 
 class ExpiredCollection(Resource):
 
@@ -494,10 +551,70 @@ class RefillCollection(Resource):
             return "Access Denied", 403
         results = PantryItem.query.filter(
             PantryItem.household_id == household,
-            PantryItem.quantity <= 0
-            )
+            or_(PantryItem.quantity <= PantryItem.min_quantity, PantryItem.quantity <= 0)
+            ).all()
         return [p.serialize() for p in results], 200
+    
+class CategoryCollection(Resource):
 
+    @jwt_required()
+    def get(self, household):
+        _,membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+        
+        categories = Category.query.filter_by(household_id=household).all()
+
+        return [{"id": c.id, "name": c.name} for c in categories], 200
+
+    @jwt_required()
+    def post(self, household):
+        _,membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+        
+        if not request.json or "name" not in request.json:
+            return "Name Required", 400
+        
+        try:
+            new_category = Category(
+                name=request.json["name"],
+                household_id=household
+            )
+            db.session.add(new_category)
+            db.session.commit()
+        except IntegrityError:
+            return "Category currently exists in the house", 409
+        
+        return {"id": new_category.id, "name": new_category.name}, 201
+
+class CategoryItem(Resource):
+
+    @jwt_required()
+    def get(self, household, category):
+        _,membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+        
+        category = Category.query.filter_by(id=category, household_id=household).first()
+        if category is None:
+            return "Category not found", 404
+        
+        return {"id": category.id, "name": category.name}, 200
+
+    @jwt_required()
+    def delete(self, household, category):
+        _,membership = get_membership(get_jwt_identity(), household)
+        if membership is None:
+            return "Access Denied", 403
+        
+        category = Category.query.filter_by(id=category, household_id=household).first()
+        if category is None:
+            return "Category not found", 404
+        
+        db.session.delete(category)
+        db.commit()
+        return "", 204
 
 class UserLogin(Resource):
 
@@ -534,8 +651,12 @@ api.add_resource(MemberCollection, "/api/households/<household>/members/")
 api.add_resource(JoinHousehold, "/api/join/")
 api.add_resource(PantryItemCollection, "/api/households/<household>/items/")
 api.add_resource(PantryItemItem, "/api/households/<household>/items/<item>/")
+api.add_resource(PantryItemSearch, "/api/households/<household>/items/search/")
 api.add_resource(ExpiredCollection, "/api/households/<household>/items/expires/")
 api.add_resource(RefillCollection, "/api/households/<household>/items/refills/")
 api.add_resource(DateItem, "/api/households/<household>/items/expiring/<date>/")
+api.add_resource(CategoryCollection, "/api/households/<household>/categories/")
+api.add_resource(CategoryItem, "/api/households/<household>/categories/<category>/")
+api.add_resource(PantryItemCategoryCollection, "/api/households/<household>/items/<item>/categories/")
 api.add_resource(UserLogin, "/api/users/login/")
 api.add_resource(UserLogout, "/api/users/logout/")
