@@ -6,4 +6,6 @@ Lib/
 __pycache__/
 Include/
 instance/
+node_modules/
+static/css/output.css
 .env
