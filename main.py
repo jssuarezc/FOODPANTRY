@@ -5,65 +5,46 @@ import random
 import string
 from dotenv import load_dotenv
 from sqlalchemy import or_
-from flask import Flask, request
-from flask_jwt_extended import (JWTManager, create_access_token, get_jwt,
-                                get_jwt_identity, jwt_required)
+from flask import Flask, request, session
+from werkzeug.security import check_password_hash, generate_password_hash
+from functools import wraps
 from flask_restful import Api, Resource
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
-from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["PROPAGATE_EXCEPTIONS"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = datetime.timedelta(hours=24)
 
 db = SQLAlchemy(app)
-api = Api(
-    app,
-    errors={
-        "NoAuthorizationError": {"message": "Missing or invalid token", "status": 401}
-    },
-)
+api = Api(app)
 
-app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=24)
-jwt = JWTManager(app)
+#Acuérdate de cambiar SESSION_COOKIE_SECURE "True" antes de publicar!!
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SECURE"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
 app.config["SWAGGER"] = {
     "title": "Fridgeventory",
     "openapi": "3.0.3",
     "uiversion": 3,
-    "securityDefinitions": {
-        "Bearer": {
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header",
-            "description": "JWT token. Format: Bearer <token>"
-        }
-    },
-    "security": [
-        {"Bearer": []}
-    ]
 }
 swagger = Swagger(app, template_file="foodpantry.yaml")
 
-BLOCKLIST = set()
+def login_required(f):
+    @wraps(f)
+    def decorated (*args, **kwargs):
+        if "username" not in session:
+            return {"message": "Login required"}, 401
+        return f(*args,**kwargs)
+    return decorated
 
 
-@jwt.unauthorized_loader
-def unauthorized_response(_):
-    return {"message": "Missing or invalid token"}, 401
 
-
-@jwt.token_in_blocklist_loader
-def check_if_token_revoked(_, jwt_payload):
-    return jwt_payload["jti"] in BLOCKLIST
-
-
-@jwt.revoked_token_loader
-def revoked_token_response(_, __):
-    return {"message": "Token has been revoked"}, 401
 
 def generate_join_code(length=6):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
@@ -181,10 +162,11 @@ def get_membership(username, household_id):
 
 class UserCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self):
         users = User.query.all()
         return [u.serialize() for u in users], 200
+
 
     def post(self):
         if not request.json:
@@ -194,12 +176,14 @@ class UserCollection(Resource):
             email = request.json["email"]
             password = request.json["password"]
 
-            new_user = User(
-                username=username,
-                email=email,
-            )
-
+            if len(password) < 8:
+                return "Password must be at least 8 characters long", 400
+            if username == password:
+                return "Username cannot be the same as password", 400
+            
+            new_user = User(username=username, email=email)
             new_user.pwd_set(password)
+
             db.session.add(new_user)
             db.session.commit()
         except KeyError:
@@ -211,7 +195,7 @@ class UserCollection(Resource):
 
 class UserItem(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, user):
         user_obj = User.query.filter_by(username=user).first()
         if user_obj is None:
@@ -219,7 +203,7 @@ class UserItem(Resource):
 
         return user_obj.serialize(), 200
 
-    @jwt_required()
+    @login_required
     def put(self, user):
         user_obj = User.query.filter_by(username=user).first()
         if user_obj is None:
@@ -228,14 +212,20 @@ class UserItem(Resource):
             return "User is not a JSON object", 415
         user_obj.username = request.json["username"]
         user_obj.email = request.json["email"]
-        user_obj.pwd_set(request.json["password"])
+        new_password = request.json["password"]
+        
+        if len(new_password) < 8:
+            return "Password must be at least 8 characters", 400
+        
+        user_obj.pwd_set(new_password)
+        
         try:
             db.session.commit()
         except IntegrityError:
             return "Username or email already in use", 409
         return "", 204
 
-    @jwt_required()
+    @login_required
     def delete(self, user):
         user_obj = User.query.filter_by(username=user).first()
         if user_obj is None:
@@ -246,9 +236,9 @@ class UserItem(Resource):
 
 class HouseholdCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self):
-        username = get_jwt_identity()
+        username = session["username"]
         user_obj = User.query.filter_by(username=username).first()
         if user_obj is None:
             return "User not found", 404        
@@ -258,14 +248,14 @@ class HouseholdCollection(Resource):
         return [{"id": m.household.id, "name": m.household.name, "role": m.role} for m in members_in], 200
 
 
-    @jwt_required()
+    @login_required
     def post(self):
         if not request.json:
             return "request type should be JSON", 415
         if "name" not in request.json:
             return "Name field missing", 400
         try:
-            current_user = get_jwt_identity()
+            current_user = session["username"]
             user_find = User.query.filter_by(username=current_user).first()
 
             join_code = generate_join_code()
@@ -299,10 +289,10 @@ class HouseholdCollection(Resource):
 
 class HouseholdItem(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
 
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access denied", 403
         
@@ -312,10 +302,10 @@ class HouseholdItem(Resource):
         
         return {"id": house.id, "name": house.name,"join_code": house.join_code}, 200
 
-    @jwt_required()
+    @login_required
     def put(self, household):
 
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access denied", 403
         
@@ -336,9 +326,9 @@ class HouseholdItem(Resource):
             return "Cannot update household", 409
         return "", 204
     
-    @jwt_required()
+    @login_required
     def delete(self, household):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         if membership.role != "owner":
@@ -352,9 +342,9 @@ class HouseholdItem(Resource):
 
 class MemberCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         
@@ -364,7 +354,7 @@ class MemberCollection(Resource):
 
 class JoinHousehold(Resource):
 
-    @jwt_required()
+    @login_required
     def post(self):
         if not request.json:
             return "request type should be JSON", 415
@@ -372,7 +362,7 @@ class JoinHousehold(Resource):
             return "Code not found", 400
         try:
             join_code = request.json["join_code"]
-            current_user=get_jwt_identity()
+            current_user = session["username"]
             user_find = User.query.filter_by(username=current_user).first()
             find_house = Household.query.filter_by(join_code=join_code).first()
             if find_house is None:
@@ -399,23 +389,23 @@ class JoinHousehold(Resource):
 
 class PantryItemCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         pantry = PantryItem.query.filter_by(household_id=household).all()
         return [p.serialize() for p in pantry], 200
 
-    @jwt_required()
+    @login_required
     def post(self, household):
         if not request.json:
             return "request type shoyld be JSON", 415
-        _, membership = get_membership(get_jwt_identity(),household)
+        _, membership = get_membership(session["username"],household)
         if membership is None:
             return "Access Denied", 403
         try:
-            current_user = get_jwt_identity()
+            current_user = session["username"]
             user_find = User.query.filter_by(username=current_user).first()
             name = request.json["name"]
             quantity = request.json["quantity"]
@@ -448,9 +438,9 @@ class PantryItemCollection(Resource):
 
 class PantryItemItem(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household, item):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access denied", 403
         
@@ -459,9 +449,9 @@ class PantryItemItem(Resource):
             return "Item not found", 404
         return item_obj.serialize(), 200
 
-    @jwt_required()
+    @login_required
     def put(self, household, item):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access denied", 403
         
@@ -484,9 +474,9 @@ class PantryItemItem(Resource):
             return "Item already registered", 409
         return "", 204
 
-    @jwt_required()
+    @login_required
     def delete(self, household, item):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access denied", 403
         
@@ -499,9 +489,9 @@ class PantryItemItem(Resource):
 
 class PantryItemSearch(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
 
@@ -517,9 +507,9 @@ class PantryItemSearch(Resource):
     
 class PantryItemCategoryCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def post(self, household, item):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         
@@ -544,9 +534,9 @@ class PantryItemCategoryCollection(Resource):
         db.session.commit()
         return {"message": "Category assigned"}, 201
 
-    @jwt_required()
+    @login_required
     def delete(self, household, item):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
 
@@ -573,9 +563,9 @@ class PantryItemCategoryCollection(Resource):
 
 class ExpiredCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         today = datetime.date.today()
@@ -589,9 +579,9 @@ class ExpiredCollection(Resource):
 
 class DateItem(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household, date):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         item_date = datetime.date.fromisoformat(date)
@@ -605,9 +595,9 @@ class DateItem(Resource):
 
 class RefillCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
-        _, membership = get_membership(get_jwt_identity(), household)
+        _, membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         results = PantryItem.query.filter(
@@ -618,9 +608,9 @@ class RefillCollection(Resource):
     
 class CategoryCollection(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household):
-        _,membership = get_membership(get_jwt_identity(), household)
+        _,membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         
@@ -628,9 +618,9 @@ class CategoryCollection(Resource):
 
         return [{"id": c.id, "name": c.name} for c in categories], 200
 
-    @jwt_required()
+    @login_required
     def post(self, household):
-        _,membership = get_membership(get_jwt_identity(), household)
+        _,membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         
@@ -651,9 +641,9 @@ class CategoryCollection(Resource):
 
 class CategoryItem(Resource):
 
-    @jwt_required()
+    @login_required
     def get(self, household, category):
-        _,membership = get_membership(get_jwt_identity(), household)
+        _,membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         
@@ -663,9 +653,9 @@ class CategoryItem(Resource):
         
         return {"id": category.id, "name": category.name}, 200
 
-    @jwt_required()
+    @login_required
     def delete(self, household, category):
-        _,membership = get_membership(get_jwt_identity(), household)
+        _,membership = get_membership(session["username"], household)
         if membership is None:
             return "Access Denied", 403
         
@@ -692,17 +682,17 @@ class UserLogin(Resource):
         if not user_obj or not user_obj.pwd_check(password):
             return "Invalid username or password", 401
 
-        token = create_access_token(identity=username)
-        return {"token": token}, 200
+        session["username"] = username
+        session["user_id"] = user_obj.id
+        session.permanent = True
+        return {"message": "Login successful"}, 200
 
 
 class UserLogout(Resource):
 
-    @jwt_required()
     def post(self):
-        jti = get_jwt()["jti"]
-        BLOCKLIST.add(jti)
-        return {"message": "Successfully logged out"}, 200
+        session.clear()
+        return {"message": "Logged out successfully"}, 200
 
 api.add_resource(UserCollection, "/api/users/")
 api.add_resource(UserItem, "/api/users/<user>/")
