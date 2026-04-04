@@ -1,4 +1,5 @@
 ---
+openapi: 3.0.4
 info:
   title: Fridgeventory
   version: 1.0.0
@@ -84,6 +85,8 @@ servers:
 paths:
   /users/:
     post:
+      tags:
+        - Users
       description: Registers a new user
       requestBody:
         description : User registration details
@@ -106,6 +109,8 @@ paths:
           description: Request must be JSON
   /users/login/:
     post:
+      tags:
+        - Users
       description: Login and receive a JWT token
       requestBody:
         description : Login credentials
@@ -134,6 +139,8 @@ paths:
           description: Request must be JSON
   /users/logout/:
     post:
+      tags:
+        - Users
       description: Logout and invalidate current Token
       security:
         - Bearer: []
@@ -144,6 +151,8 @@ paths:
           description: Missing or invalid token
   /users/{user}/:
     get:
+      tags:
+        - Users
       description:  Get a single user's profile
       security:
         - Bearer: []
@@ -167,6 +176,8 @@ paths:
         '404':
           description: User not found
     put:
+      tags:
+        - Users
       description: Update a user's profile
       security:
         - Bearer: []
@@ -196,6 +207,8 @@ paths:
         '415':
           description: Request must be JSON
     delete:
+      tags:
+        - Users
       description: Delete a user and all their data
       security:
         - Bearer: []
@@ -215,6 +228,8 @@ paths:
           description: Missing or invalid token
   /households/:
     get:
+      tags:
+        - Households
       description: Get all households that user currently manages
       security:
         - Bearer: []
@@ -230,6 +245,8 @@ paths:
         '401':
           description: Missing or invalid token
     post:
+      tags:
+        - Households
       description: Create a new household
       security:
         - Bearer: []
@@ -250,6 +267,8 @@ paths:
                 join_code: X7K2P9
   /households/{household}/:
     get:
+      tags:
+        - Households
       description: Get a single household
       security:
         - Bearer: []
@@ -274,6 +293,8 @@ paths:
         '404':
           description: Household not found
     put:
+      tags:
+        - Households
       description: Rename a household (owner only)
       security:
         - Bearer: []
@@ -301,6 +322,8 @@ paths:
         '404':
           description: Household not found
     delete:
+      tags:
+        - Households
       description: Delete a household (owner only)
       security:
         - Bearer: []
@@ -320,6 +343,8 @@ paths:
           description: Household not found
   /households/{household}/members/:
     get:
+      tags:
+        - Members
       description: Get all members of a household
       security:
         - Bearer: []
@@ -344,6 +369,8 @@ paths:
           description: Access denied
   /join/:
     post:
+      tags:
+        - Members
       description: User joins a household with a join code
       security:
         - Bearer: []
@@ -366,6 +393,8 @@ paths:
           description: User is already a member of this household
   /households/{household}/items/:
     get:
+      tags:
+        - Items
       description: Get all pantry items in a household
       security:
         - Bearer: []
@@ -393,6 +422,8 @@ paths:
         '403':
           description: Access denied
     post:
+      tags:
+        - Items
       description: Add a new item to the pantry
       security:
         - Bearer: []
@@ -426,6 +457,8 @@ paths:
           description: Request must be json
   /households/{household}/items/{item}/:
     get:
+      tags:
+        - Items
       description: Get a single pantry item
       security:
         - Bearer: []
@@ -457,6 +490,8 @@ paths:
         '404':
           description: Item not found
     put:
+      tags:
+        - Items
       description: Update a pantry item
       security:
         - Bearer: []
@@ -492,6 +527,8 @@ paths:
         '415':
           description: Request must be JSON
     delete:
+      tags:
+        - Items
       description: Delete a pantry item
       security:
         - Bearer: []
@@ -515,6 +552,8 @@ paths:
           description: Item not found
   /households/{household}/items/search/:
     get:
+      tags:
+        - Items
       description: Search pantry items by name (case insensitive)
       security:
         - Bearer: []
@@ -541,6 +580,8 @@ paths:
 
   /households/{household}/items/expires/:
     get:
+      tags:
+        - Items
       description: Get all expired items in a household
       security:
         - Bearer: []
@@ -557,6 +598,8 @@ paths:
           description: Access denied
   /households/{household}/items/refills/:
     get:
+      tags:
+        - Items
       description: Get items at or below minimum quantity
       security:
         - Bearer: []
@@ -574,6 +617,8 @@ paths:
 
   /households/{household}/items/expiring/{date}/:
     get:
+      tags:
+        - Items
       description: Get items expiring on a specific date
       security:
         - Bearer: []
@@ -596,6 +641,8 @@ paths:
           description: Access denied
   /households/{household}/categories/:
     get:
+      tags:
+        - Category
       description: Get all categories in a household
       security:
         - Bearer: []
@@ -619,6 +666,8 @@ paths:
         '403':
           description: Access denied
     post:
+      tags:
+        - Category
       description: Create a new category in a household
       security:
         - Bearer: []
@@ -652,6 +701,8 @@ paths:
           description: Category already exists in this household
   /households/{household}/categories/{category}/:
     get:
+      tags:
+        - Category
       description: Get a single category
       security:
         - Bearer: []
@@ -680,6 +731,8 @@ paths:
         '404':
           description: Category not found
     delete:
+      tags:
+        - Category
       description: Delete a category from a household
       security:
         - Bearer: []
@@ -704,6 +757,8 @@ paths:
           description: Category not found
   /households/{household}/items/{item}/categories/:
       post:
+        tags:
+          - Category
         description: Assign a category to a pantry item
         security:
           - Bearer: []
@@ -741,6 +796,8 @@ paths:
           '409':
             description: Category already assigned to this item
       delete:
+        tags:
+          - Category
         description: Remove a category from a pantry item
         security:
           - Bearer: []
@@ -757,17 +814,12 @@ paths:
             schema:
               type: string
             description: Product name e.g. Milk
-        requestBody:
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  category_id:
-                    type: integer
-                    description: ID of the category to remove
-              example:
-                category_id: 1
+          - name: category_id
+            in: query
+            required: true
+            schema:
+              type: integer
+            description: ID of the category to remove
         responses:
           '204':
             description: Category removed from item
