@@ -1,5 +1,6 @@
 from flask_marshmallow import Marshmallow
-from marshmallow import fields, validate
+from marshmallow import fields, validate, post_load
+from werkzeug.security import generate_password_hash
 from models import User, Household, HouseholdMember, Category, PantryItem
 
 ma = Marshmallow()
@@ -11,6 +12,12 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
         include_fk = True
         load_only = ("password",)
 
+    @post_load
+    def hash_password(self, data, **kwargs):
+        if data.password:
+            data.password = generate_password_hash(data.password)
+            return data
+
 class CategorySchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = Category
@@ -18,6 +25,8 @@ class CategorySchema(ma.SQLAlchemyAutoSchema):
         include_fk = True
 
 class PantryItemSchema(ma.SQLAlchemyAutoSchema):
+    id = fields.Integer(dump_only=True)
+    added_by = fields.Integer(dump_only=True)
     categories = ma.Pluck(CategorySchema, "name", many=True)
     quantity = fields.Float(required=True, validate=validate.Range(min=0))
 

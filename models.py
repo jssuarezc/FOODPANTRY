@@ -14,7 +14,7 @@ class User(db.Model):
     email = db.Column(db.String(64), nullable=False, unique=True)
     password = db.Column(db.String(256), nullable=False)
     items = db.relationship("PantryItem", back_populates="item_added", foreign_keys="PantryItem.added_by", cascade="all,delete-orphan")
-    households = db.relationship("Household", back_populates="user", cascade="all, delete-orphan")
+    households = db.relationship("HouseholdMember", back_populates="user", cascade="all, delete-orphan")
 
 class Household(db.Model):
     id = db.Column(db.Integer, primary_key=True)
